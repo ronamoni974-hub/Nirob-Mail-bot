@@ -28,9 +28,9 @@ except Exception as e:
     db = None
 
 # --- Configuration ---
-TOKEN = '8572418006:AAEQBCXBPxa35yBiSWeaVWVvLP9N326fJos'
+TOKEN = '8688859763:AAEzMMeHndHK8fywCOuFYuLYHeTMxI21MLM'
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
-ADMIN_ID = "6670461311"
+ADMIN_ID = "8652060017"
 
 # --- Global Storage (Hybrid Memory) ---
 user_data = {}
@@ -40,10 +40,10 @@ system_data = {'active_promos': {}}
 
 api_data = {
     'tokens': [
-        'td_18c938ad445ea882ebc1110b22723e1ca1ddef7911dde89e80a095f3c2120119', 
-        'td_d4ee26c571da82546f814b6d1595f59f780489afc162254cba00009fba83f48d', 
-        'td_1d45403d07853397e061d49f21c1fa9e0a80816e0005401a11bdf84218d496ee',  
-        'td_4af40882b5019f9be105e7b4e3beeeaf1cffd81060fc383d824622c4470d73f0'  
+        '1st api', 
+        '2nd api', 
+        '3rd api',  
+        '4rth api'  
     ],
     'active_idx': 0,
     'usage': {},
@@ -359,7 +359,7 @@ def handle_text(message):
             "• Engine: Mail.td Pro API & Ultimate Fallback\n"
             "• Performance: Zero-Lag Sync\n"
             "• Developer: <a href='https://t.me/Ad_Walid'>Md Walid</a>\n"
-            "• Bot Admin: <a href='https://t.me/Ad_Walid'>Md Walid</a>\n\n"
+            "• Bot Admin: <a href='https://t.me/nirob_owner4'>Owner Nirob</a>\n\n"
             "<i>Crafted with modern interface aesthetics.</i>"
         )
         bot.send_message(chat_id, about_text, disable_web_page_preview=True)
