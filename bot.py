@@ -30,7 +30,7 @@ except Exception as e:
 # --- Configuration ---
 TOKEN = '8688859763:AAEzMMeHndHK8fywCOuFYuLYHeTMxI21MLM'
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
-ADMIN_ID = "8652060017"
+ADMIN_ID = "6670461311"
 CHANNEL_USERNAME = "@caption_only63" # ⚠️ এখানে আপনার চ্যানেলের ইউজারনেম দিন
 
 # --- Global Storage (Hybrid Memory) ---
