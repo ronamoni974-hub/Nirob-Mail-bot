@@ -31,6 +31,7 @@ except Exception as e:
 TOKEN = '8688859763:AAEzMMeHndHK8fywCOuFYuLYHeTMxI21MLM'
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 ADMIN_ID = "8652060017"
+CHANNEL_USERNAME = "@caption_only63" # ⚠️ এখানে আপনার চ্যানেলের ইউজারনেম দিন
 
 # --- Global Storage (Hybrid Memory) ---
 user_data = {}
@@ -40,10 +41,10 @@ system_data = {'active_promos': {}}
 
 api_data = {
     'tokens': [
-        '1st api', 
-        '2nd api', 
-        '3rd api',  
-        '4rth api'  
+        'td_771bb735f2e3af99122852ce36ead823b49e36e5057843fa87fa84feb928ffce', 
+        'td_c9af80675aa7a0ca3e255c9070555ab0c598578611e573c8ecd2e9ad0e5dff23', 
+        'td_ef6c7eb259c1db04e66274891988f4035c7b89c23e6b35410359973e73be8e3b',  
+        'td_ef6c7eb259c1db04e66274891988f4035c7b89c23e6b35410359973e73be8e3b'  
     ],
     'active_idx': 0,
     'usage': {},
@@ -186,13 +187,31 @@ def get_admin_menu():
 def get_back_button():
     return InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 Back to Panel", callback_data="admin_back"))
 
+# --- Helper Functions ---
 def is_banned(chat_id):
     if str(chat_id) in banned_users:
         bot.send_message(chat_id, "🚫 <b>Account Banned!</b>\n\nআপনি বট ব্যবহারের নিয়ম ভঙ্গ করেছেন।\nযোগাযোগ করুন: <a href='https://t.me/Ad_Walid'>@Ad_Walid</a>", disable_web_page_preview=True)
         return True
     return False
 
-# --- Helper Functions ---
+def check_membership(user_id):
+    if CHANNEL_USERNAME == "@your_channel_username" or CHANNEL_USERNAME == "":
+        return True 
+    try:
+        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        if member.status in ['member', 'administrator', 'creator']:
+            return True
+        return False
+    except Exception:
+        return False
+
+def force_sub_markup():
+    markup = InlineKeyboardMarkup()
+    channel_link = f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"
+    markup.add(InlineKeyboardButton("📢 Join Channel", url=channel_link))
+    markup.add(InlineKeyboardButton("✅ Verify", callback_data="verify_join"))
+    return markup
+
 def get_service_logo(sender):
     s = str(sender).lower()
     if 'facebook' in s or 'fb' in s: return '📘 Facebook'
@@ -290,6 +309,15 @@ def init_user(message):
 def send_welcome(message):
     init_user(message)
     if is_banned(message.chat.id): return
+    
+    if not check_membership(message.from_user.id):
+        bot.send_message(
+            message.chat.id, 
+            "⚠️ <b>বটটি ব্যবহার করতে আমাদের টেলিগ্রাম চ্যানেলে জয়েন করুন!</b>\n\nচ্যানেলে জয়েন করার পর নিচের <b>Verify</b> বাটনে ক্লিক করুন।", 
+            reply_markup=force_sub_markup()
+        )
+        return
+
     bot.send_message(message.chat.id, "🌟 <b>Welcome to Pro Mail Assistant!</b>\n\nআপনার পার্সোনাল ইনবক্সকে স্প্যাম থেকে সুরক্ষিত রাখুন।", reply_markup=get_main_menu(str(message.chat.id)))
 
 @bot.message_handler(func=lambda message: True)
@@ -298,6 +326,14 @@ def handle_text(message):
     text = message.text
     init_user(message)
     if is_banned(chat_id): return
+    
+    if not check_membership(message.from_user.id):
+        bot.send_message(
+            message.chat.id, 
+            "⚠️ <b>বটটি ব্যবহার করতে আগে আমাদের চ্যানেলে জয়েন করুন!</b>", 
+            reply_markup=force_sub_markup()
+        )
+        return
 
     if text == "✨ New Pro Mail":
         anim_msg = bot.send_message(chat_id, "<i>⏳ Initializing Protocol...</i>")
@@ -457,7 +493,14 @@ def handle_callback(call):
     chat_id = str(call.message.chat.id)
     if is_banned(chat_id): return
     
-    if call.data == "cancel_custom":
+    if call.data == "verify_join":
+        if check_membership(call.from_user.id):
+            bot.delete_message(chat_id, call.message.message_id)
+            bot.send_message(chat_id, "🌟 <b>Welcome to Pro Mail Assistant!</b>\n\nআপনার পার্সোনাল ইনবক্সকে স্প্যাম থেকে সুরক্ষিত রাখুন।", reply_markup=get_main_menu(chat_id))
+        else:
+            bot.answer_callback_query(call.id, "⚠️ আপনি এখনো চ্যানেলে জয়েন করেননি! আগে জয়েন করুন।", show_alert=True)
+            
+    elif call.data == "cancel_custom":
         bot.clear_step_handler_by_chat_id(call.message.chat.id)
         for msg_id in user_data.get(chat_id, {}).get('custom_mail_msgs', []):
             try: bot.delete_message(chat_id, msg_id)
