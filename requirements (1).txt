@@ -1,5 +1,0 @@
-pyTelegramBotAPI
-Flask
-requests
-mailtd
-firebase-admin
