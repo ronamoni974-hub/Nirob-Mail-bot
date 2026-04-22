@@ -43,8 +43,8 @@ api_data = {
     'tokens': [
         'td_771bb735f2e3af99122852ce36ead823b49e36e5057843fa87fa84feb928ffce', 
         'td_c9af80675aa7a0ca3e255c9070555ab0c598578611e573c8ecd2e9ad0e5dff23', 
-        'td_ef6c7eb259c1db04e66274891988f4035c7b89c23e6b35410359973e73be8e3b',  
-        'td_ef6c7eb259c1db04e66274891988f4035c7b89c23e6b35410359973e73be8e3b'  
+        'td_ef6c7eb259c1db04e66274891988f4035c7b89c23e6b35410359973e73be8e3b'
+        
     ],
     'active_idx': 0,
     'usage': {},
@@ -108,53 +108,53 @@ def restore_apis():
             changed = True
     if changed: save_system_data()
 
-def mark_api_exhausted(token):
-    if token not in api_data['exhausted']:
-        api_data['exhausted'][token] = time.time()
-        api_data['usage'][token] = 1000
-        save_system_data()
-        try: bot.send_message(ADMIN_ID, f"⚠️ <b>API Limit Reached!</b>\n\nএকটি API এর লিমিট শেষ। পরবর্তী API তে সুইচ করা হচ্ছে।")
-        except: pass
-
-def get_active_client():
-    restore_apis()
-    valid_tokens = [t for t in api_data['tokens'] if "YOUR_" not in t and len(t) > 15]
-    if not valid_tokens: raise Exception("All APIs Exhausted")
-
-    for _ in range(len(valid_tokens)):
-        token = valid_tokens[api_data['active_idx'] % len(valid_tokens)]
-        if token not in api_data['exhausted']:
-            if token not in api_clients:
-                api_clients[token] = MailTD(token)
-            return api_clients[token], token
-        api_data['active_idx'] = (api_data['active_idx'] + 1) % len(valid_tokens)
-    
-    raise Exception("All APIs Exhausted")
-
 def create_mail_with_fallback(clean_name=None):
-    # 1. Try Mail.td APIs
-    try:
-        client, token = get_active_client()
-        if api_data['usage'].get(token, 0) < 1000:
-            domains = client.accounts.list_domains()
-            domain_name = domains[0].domain if hasattr(domains[0], 'domain') else domains[0]
-            
-            email_address = f"{clean_name}@{domain_name}" if clean_name else f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}@{domain_name}"
-            account = client.accounts.create(email_address, password="propassword123")
-            return account.id, account.address, token 
-        else:
-            mark_api_exhausted(token)
-    except Exception as e:
-        error_msg = str(e).lower()
-        if clean_name and ("already exists" in error_msg or "taken" in error_msg or "400" in error_msg):
-            raise Exception("NameTaken")
+    restore_apis()
+    valid_tokens = [t for t in api_data['tokens'] if len(t) > 5]
+    
+    # 1. Try MailTD APIs first
+    for _ in range(len(valid_tokens)):
+        if not valid_tokens: break
+        token = valid_tokens[api_data['active_idx'] % len(valid_tokens)]
+        
+        if token not in api_data['exhausted']:
+            try:
+                if token not in api_clients:
+                    api_clients[token] = MailTD(token)
+                client = api_clients[token]
+                domains = client.accounts.list_domains()
+                domain_name = domains[0].domain if hasattr(domains[0], 'domain') else domains[0]
+                
+                email_address = f"{clean_name}@{domain_name}" if clean_name else f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}@{domain_name}"
+                account = client.accounts.create(email_address, password="propassword123")
+                return account.id, account.address, token 
+            except Exception as e:
+                error_msg = str(e).lower()
+                if clean_name and ("already exists" in error_msg or "taken" in error_msg or "400" in error_msg):
+                    raise Exception("NameTaken")
+                else:
+                    # Switch to next API on lag/error (No waiting for limit)
+                    api_data['active_idx'] = (api_data['active_idx'] + 1) % len(valid_tokens)
+                    continue
 
-    # 2. Ultimate Fallback to 1secmail if Mail.td fails
+    # 2. Ultimate Fallback to Mail.tm (Premium Domains for FB/IG)
     try:
-        domain_name = "1secmail.com" 
+        domains_resp = requests.get("https://api.mail.tm/domains").json()
+        domain_name = domains_resp['hydra:member'][0]['domain']
+        
         email_address = f"{clean_name}@{domain_name}" if clean_name else f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}@{domain_name}"
-        return "1secmail_acc", email_address, "1secmail_fallback"
-    except Exception:
+        password = "propassword123"
+        
+        acc_resp = requests.post("https://api.mail.tm/accounts", json={"address": email_address, "password": password})
+        if acc_resp.status_code == 422:
+            raise Exception("NameTaken")
+            
+        token_resp = requests.post("https://api.mail.tm/token", json={"address": email_address, "password": password})
+        mail_token = token_resp.json()['token']
+        
+        return acc_resp.json()['id'], email_address, f"mailtm_{mail_token}"
+    except Exception as e:
+        if str(e) == "NameTaken": raise
         raise Exception("API Error")
 
 # --- Web Server ---
@@ -258,40 +258,48 @@ def auto_check_mail():
                     email_addr = account['email']
                     needs_sync = False
                     
-                    if acc_token == "1secmail_fallback":
-                        login, domain = email_addr.split('@')
-                        resp = requests.get(f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}").json()
-                        for msg_preview in resp:
-                            msg_id = msg_preview['id']
-                            if msg_id not in account['seen_msgs']:
-                                account['seen_msgs'].add(msg_id)
-                                needs_sync = True
-                                full_msg = requests.get(f"https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain={domain}&id={msg_id}").json()
-                                otp_section, smart_body, verify_link = extract_and_format(full_msg.get('subject', ''), full_msg.get('textBody', ''), full_msg.get('htmlBody', ''))
-                                mail_alert = f"✅ <b>New Message !</b>\n\n🏢 <b>From :</b> {get_service_logo(full_msg.get('from', ''))}\n📧 <b>To :</b> <code>{email_addr}</code>\n\n{otp_section}<blockquote>💬 {smart_body[:500]}...</blockquote>"
-                                markup = InlineKeyboardMarkup()
-                                if verify_link: markup.add(InlineKeyboardButton("🔗 Open Link", url=verify_link))
-                                sent_msg = bot.send_message(chat_id, mail_alert, reply_markup=markup)
-                                account['msg_ids'].append(sent_msg.message_id)
+                    if acc_token.startswith("mailtm_"):
+                        mailtm_token = acc_token.split("mailtm_")[1]
+                        headers = {"Authorization": f"Bearer {mailtm_token}", "Accept": "application/ld+json"}
+                        resp = requests.get("https://api.mail.tm/messages", headers=headers)
+                        if resp.status_code == 200:
+                            data_resp = resp.json()
+                            for msg_preview in data_resp.get('hydra:member', []):
+                                msg_id = msg_preview['id']
+                                if msg_id not in account['seen_msgs']:
+                                    account['seen_msgs'].add(msg_id)
+                                    needs_sync = True
+                                    full_msg_resp = requests.get(f"https://api.mail.tm/messages/{msg_id}", headers=headers)
+                                    if full_msg_resp.status_code == 200:
+                                        full_msg = full_msg_resp.json()
+                                        otp_section, smart_body, verify_link = extract_and_format(full_msg.get('subject', ''), full_msg.get('text', ''), full_msg.get('html', ''))
+                                        from_addr = full_msg.get('from', {}).get('address', '')
+                                        mail_alert = f"✅ <b>New Message !</b>\n\n🏢 <b>From :</b> {get_service_logo(from_addr)}\n📧 <b>To :</b> <code>{email_addr}</code>\n\n{otp_section}<blockquote>💬 {smart_body[:500]}...</blockquote>"
+                                        markup = InlineKeyboardMarkup()
+                                        if verify_link: markup.add(InlineKeyboardButton("🔗 Open Link", url=verify_link))
+                                        sent_msg = bot.send_message(chat_id, mail_alert, reply_markup=markup)
+                                        account['msg_ids'].append(sent_msg.message_id)
                     else:
                         account_id = account['account_id']
-                        if "YOUR_" in acc_token or not acc_token: _, acc_token = get_active_client()
-                        if acc_token not in api_clients: api_clients[acc_token] = MailTD(acc_token)
-                        temp_client = api_clients[acc_token]
-                        
-                        messages, _ = temp_client.messages.list(account_id)
-                        for msg_preview in messages:
-                            msg_id = msg_preview.id
-                            if msg_id not in account['seen_msgs']:
-                                account['seen_msgs'].add(msg_id)
-                                needs_sync = True
-                                full_msg = temp_client.messages.get(account_id, msg_id)
-                                otp_section, smart_body, verify_link = extract_and_format(full_msg.subject, getattr(full_msg, 'text_body', ''), getattr(full_msg, 'html_body', ''))
-                                mail_alert = f"✅ <b>New Message !</b>\n\n🏢 <b>From :</b> {get_service_logo(getattr(full_msg, 'from_address', getattr(full_msg, 'sender', '')))}\n📧 <b>To :</b> <code>{email_addr}</code>\n\n{otp_section}<blockquote>💬 {smart_body[:500]}...</blockquote>"
-                                markup = InlineKeyboardMarkup()
-                                if verify_link: markup.add(InlineKeyboardButton("🔗 Open Link", url=verify_link))
-                                sent_msg = bot.send_message(chat_id, mail_alert, reply_markup=markup)
-                                account['msg_ids'].append(sent_msg.message_id)
+                        if "YOUR_" in acc_token or not acc_token: pass
+                        else:
+                            if acc_token not in api_clients: api_clients[acc_token] = MailTD(acc_token)
+                            temp_client = api_clients[acc_token]
+                            try:
+                                messages, _ = temp_client.messages.list(account_id)
+                                for msg_preview in messages:
+                                    msg_id = msg_preview.id
+                                    if msg_id not in account['seen_msgs']:
+                                        account['seen_msgs'].add(msg_id)
+                                        needs_sync = True
+                                        full_msg = temp_client.messages.get(account_id, msg_id)
+                                        otp_section, smart_body, verify_link = extract_and_format(full_msg.subject, getattr(full_msg, 'text_body', ''), getattr(full_msg, 'html_body', ''))
+                                        mail_alert = f"✅ <b>New Message !</b>\n\n🏢 <b>From :</b> {get_service_logo(getattr(full_msg, 'from_address', getattr(full_msg, 'sender', '')))}\n📧 <b>To :</b> <code>{email_addr}</code>\n\n{otp_section}<blockquote>💬 {smart_body[:500]}...</blockquote>"
+                                        markup = InlineKeyboardMarkup()
+                                        if verify_link: markup.add(InlineKeyboardButton("🔗 Open Link", url=verify_link))
+                                        sent_msg = bot.send_message(chat_id, mail_alert, reply_markup=markup)
+                                        account['msg_ids'].append(sent_msg.message_id)
+                            except: pass
                     
                     if needs_sync: save_user_data(chat_id)
         except Exception: pass
@@ -339,7 +347,7 @@ def handle_text(message):
         anim_msg = bot.send_message(chat_id, "<i>⏳ Initializing Protocol...</i>")
         try:
             acc_id, email_addr, used_token = create_mail_with_fallback() 
-            if used_token != "1secmail_fallback":
+            if not used_token.startswith("mailtm_"):
                 api_data['usage'][used_token] = api_data['usage'].get(used_token, 0) + 1
                 
             user_data[chat_id]['accounts'].append({'account_id': acc_id, 'email': email_addr, 'seen_msgs': set(), 'msg_ids': [anim_msg.message_id], 'api_token': used_token})
@@ -416,7 +424,8 @@ def process_custom_mail(message):
     anim_msg = bot.send_message(chat_id, "<i>⏳ Checking availability...</i>")
     try:
         acc_id, email_addr, used_token = create_mail_with_fallback(clean_name)
-        if used_token != "1secmail_fallback": api_data['usage'][used_token] = api_data['usage'].get(used_token, 0) + 1
+        if not used_token.startswith("mailtm_"):
+            api_data['usage'][used_token] = api_data['usage'].get(used_token, 0) + 1
             
         user_data[chat_id]['accounts'].append({'account_id': acc_id, 'email': email_addr, 'seen_msgs': set(), 'msg_ids': [], 'api_token': used_token})
         user_data[chat_id]['active_index'] = len(user_data[chat_id]['accounts']) - 1
@@ -534,6 +543,7 @@ def handle_callback(call):
             restore_apis()
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("➕ Add New API Token", callback_data="admin_add_api"))
+            markup.add(InlineKeyboardButton("🗑️ Delete API", callback_data="admin_delete_api_menu"))
             markup.add(InlineKeyboardButton("🔙 Back to Panel", callback_data="admin_back"))
             
             api_info = f"🔑 <b>API Limit Management</b>\n\n"
@@ -543,16 +553,42 @@ def handle_callback(call):
                 if token in api_data['exhausted']:
                     days_left = 30 - (datetime.now() - datetime.fromtimestamp(api_data['exhausted'][token])).days
                     status = f"🔴 Exhausted (Resets in {days_left}d)"
-                elif i == api_data['active_idx']: status = "🔵 Currently Using"
+                elif len(api_data['tokens']) > 0 and i == api_data['active_idx'] % len(api_data['tokens']): 
+                    status = "🔵 Currently Using"
                 
                 short_token = f"{token[:6]}...{token[-4:]}" if len(token) > 10 else token
                 api_info += f"<b>{i+1}.</b> <code>{short_token}</code>\n└ Ops: <b>{usage} / 1000</b> | {status}\n\n"
-            api_info += f"<i>💡 নোট: সকল API লিমিট শেষ হলে বট অটোমেটিক 1secmail (.com) সার্ভারে সুইচ করবে!</i>"
+            api_info += f"<i>💡 নোট: সকল API ফেইল করলে বা লিমিট শেষ হলে বট অটোমেটিক Mail.tm সার্ভারে সুইচ করবে!</i>"
             bot.edit_message_text(api_info, chat_id, call.message.message_id, reply_markup=markup)
             
         elif call.data == "admin_add_api":
             bot.edit_message_text("➕ <b>Add New API Token</b>\n\nআপনার নতুন API Token টি টাইপ করে সেন্ড করুন:", chat_id, call.message.message_id, reply_markup=get_back_button())
             bot.register_next_step_handler(call.message, process_add_api)
+            
+        elif call.data == "admin_delete_api_menu":
+            markup = InlineKeyboardMarkup(row_width=1)
+            for i, token in enumerate(api_data['tokens']):
+                short_token = f"{token[:6]}...{token[-4:]}" if len(token) > 10 else token
+                markup.add(InlineKeyboardButton(f"❌ Delete {short_token}", callback_data=f"delapi_{i}"))
+            markup.add(InlineKeyboardButton("🔙 Back", callback_data="admin_apis"))
+            bot.edit_message_text("🗑️ <b>Delete API</b>\n\nযে API টি ডিলিট করতে চান তার উপর ক্লিক করুন:", chat_id, call.message.message_id, reply_markup=markup)
+            
+        elif call.data.startswith('delapi_'):
+            idx = int(call.data.split('_')[1])
+            if 0 <= idx < len(api_data['tokens']):
+                deleted_token = api_data['tokens'].pop(idx)
+                if deleted_token in api_data['exhausted']: del api_data['exhausted'][deleted_token]
+                if deleted_token in api_data['usage']: del api_data['usage'][deleted_token]
+                save_system_data()
+                bot.answer_callback_query(call.id, "✅ API Deleted from Database!", show_alert=True)
+                
+                # Refresh Menu
+                markup = InlineKeyboardMarkup(row_width=1)
+                for i, token in enumerate(api_data['tokens']):
+                    short_token = f"{token[:6]}...{token[-4:]}" if len(token) > 10 else token
+                    markup.add(InlineKeyboardButton(f"❌ Delete {short_token}", callback_data=f"delapi_{i}"))
+                markup.add(InlineKeyboardButton("🔙 Back", callback_data="admin_apis"))
+                bot.edit_message_text("🗑️ <b>Delete API</b>\n\nযে API টি ডিলিট করতে চান তার উপর ক্লিক করুন:", chat_id, call.message.message_id, reply_markup=markup)
             
         elif call.data == "admin_stats":
             total_users = len(user_data)
