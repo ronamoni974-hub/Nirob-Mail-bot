@@ -139,7 +139,7 @@ def create_mail_with_fallback(clean_name=None):
 
     # 2. Ultimate Fallback to Mail.tm (Premium Domains for FB/IG)
     try:
-        domains_resp = requests.get("https://api.mail.tm/domains").json()
+        domains_resp = requests.get("//api.mail.tm/domains").json()
         domain_name = domains_resp['hydra:member'][0]['domain']
         
         email_address = f"{clean_name}@{domain_name}" if clean_name else f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}@{domain_name}"
@@ -403,7 +403,7 @@ def handle_text(message):
             "• Engine: Mail.td Pro API & Ultimate Fallback\n"
             "• Performance: Zero-Lag Sync\n"
             "• Developer: <a href='https://t.me/Ad_Walid'>Md Walid</a>\n"
-            "• Bot Admin: <a href='https://t.me/nirob_owner4'>Owner Nirob</a>\n\n"
+            "• Bot Admin: <a href=''></a>\n\n"
             "<i>Crafted with modern interface aesthetics.</i>"
         )
         bot.send_message(chat_id, about_text, disable_web_page_preview=True)
